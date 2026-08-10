@@ -59,13 +59,16 @@ python main.py D:\my-project --print
 
 ```
 git-commit-log-ai/
-├── main.py            # 入口
-├── config.py          # .env 加载与配置
-├── git_collector.py   # git 命令收集（status + diff + log）
-├── prompt_builder.py  # 提示词组装
-├── llm_client.py      # 模型调用（OpenAI 兼容接口）
-├── gui.py             # 图形界面（tkinter）
-└── build.bat          # PyInstaller 打包脚本
+├── main.py                 # 入口
+├── config.py               # .env 加载与配置
+├── git_collector.py        # git 命令收集（status + diff + log）
+├── prompt_builder.py       # 提示词组装
+├── llm_client.py           # 模型调用（OpenAI 兼容接口）
+├── gui.py                  # 图形界面（tkinter）
+├── .env.example            # 配置模板（复制为 .env 后填写）
+├── requirements.txt        # Python 依赖
+├── git-commit-log-ai.spec  # PyInstaller 打包配置
+└── build.bat               # PyInstaller 打包脚本
 ```
 
 ## 说明
