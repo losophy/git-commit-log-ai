@@ -1,0 +1,25 @@
+# git-commit-log-ai
+# Git AI commit message generator for TortoiseGit.
+#
+# Python version: 3.10-3.13 (3.10 recommended)
+#
+# Setup:
+#   py -3.10 -m venv .venv
+#   .venv\Scripts\Activate.ps1
+#   pip install -r requirements.txt
+#
+# Build single exe:
+#   build.bat
+
+# ---------- LLM (OpenAI-compatible, see tutorial ch.11) ----------
+langchain>=1.2,<2
+langchain-core>=1.2,<2
+langchain-openai>=1.1,<2
+openai>=1.0,<3
+
+# ---------- Config loading ----------
+python-dotenv>=1.0
+
+# ---------- GUI (Tkinter built-in, no extra dep) ----------
+# pyperclip for clipboard copy
+pyperclip>=1.8
