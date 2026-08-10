@@ -10,6 +10,35 @@
 - 模型名等配置统一写在 `.env`，界面点「打开 .env」即可修改，无需每次改代码
 - 兼容任何 OpenAI 兼容接口：DeepSeek、阿里百炼（通义千问）、Ollama 本地等
 
+## 项目亮点
+
+- **三路上下文，而不是模型裸读 diff**
+    - 同时采集 `status`（变更清单）、`diff HEAD`（差异内容）和 `log`（历史风格），近期提交只作为风格参考，避免模型照抄旧内容，先理解改动目的再组织语言。
+- **长 diff 智能截断，控制 token 开销**
+    - 超过 `MAX_DIFF_LINES` 的差异自动截断并显式标注，大仓库也能一次稳定生成，不会把上下文撑爆。
+- **规范与语言双项可配，贴近团队约定**
+    - 支持 `Conventional Commits` 与 `simple` 两种风格，语言可选 `auto` / `zh` / `en`，`auto` 时按近期提交历史自动判断语言。
+- **GUI + CLI 双模式交付**
+    - `tkinter` 图形界面可直接编辑、复制提交信息；也支持 `--print` 命令行模式，把提交信息直接打印到终端，便于脚本集成。
+- **面向 Windows 的零依赖交付**
+    - 基于 `PyInstaller` 一键打包成免安装 exe，双击即用；不依赖外部窗口、不监听钩子，配置全部收敛在 `.env`。
+- **人工确认，安全兜底**
+    - 工具不执行提交动作，生成的信息由你人工确认后使用——避免大模型误判导致错误提交记录。
+
+## 系统架构
+
+项目围绕一条完整链路展开：采集 → 组装 → 生成 → 交付。
+
+| 阶段       | 做什么                                                       | 涉及模块                              |
+| ---------- | ------------------------------------------------------------ | ------------------------------------- |
+| 变更采集   | 对选中的 Git 项目执行 `status` / `diff HEAD` / `log`，得到变更清单、差异内容与历史风格 | `git_collector.py` / `subprocess`     |
+| 上下文组装 | 按 `COMMIT_STYLE` 与 `COMMIT_LANGUAGE` 拼装 system / user Prompt，长 diff 截断 | `prompt_builder.py` / `config.py`     |
+| 模型生成   | 通过 OpenAI 兼容接口调用大模型，生成提交信息并清理多余前后缀/代码块 | `llm_client.py` / `langchain-openai`  |
+| 界面交付   | 后台线程生成，`queue` 轮询回填界面；支持编辑、复制、重新生成 | `gui.py` / `tkinter` / `pyperclip`    |
+
+![git-commit-log-ai 系统架构图](images/architecture.png)
+![git-commit-log-ai gui](images/git-commit-log-ai-gui.png)
+
 ## 从源码运行（开发/自用）
 
 ```powershell
