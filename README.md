@@ -10,12 +10,6 @@
 - 模型名等配置统一写在 `.env`，界面点「打开 .env」即可修改，无需每次改代码
 - 兼容任何 OpenAI 兼容接口：DeepSeek、阿里百炼（通义千问）、Ollama 本地等
 
-## 快速开始（使用打包好的 exe）
-
-1. 双击 `git-commit-log-ai.exe` 运行（放哪里都行，不需要复制到项目里）
-2. 点击上方「选择项目」，选一个 Git 项目根目录
-3. 软件自动扫描该项目的变更并生成提交信息 → 点「复制到剪贴板」→ 在 TortoiseGit 或命令行粘贴使用
-
 ## 从源码运行（开发/自用）
 
 ```powershell
@@ -40,6 +34,13 @@ python main.py D:\my-project --print
 # 产物在 git-commit-log-ai.exe
 ```
 
+## 快速开始（使用打包好的 exe）
+
+1. 双击 `git-commit-log-ai.exe` 运行
+2. 点击上方「打开.env」，填上模型名等配置
+3. 点击上方「选择项目」，选一个 Git 项目根目录
+4. 软件自动扫描该项目的变更并生成提交信息 → 点「复制到剪贴板」→ 在 TortoiseGit 或命令行粘贴使用
+
 ## 配置
 
 所有配置都写在 exe 同目录的 `.env` 中（点击界面「打开 .env」即可编辑，不存在会自动创建）；已有系统环境变量仍会优先于 `.env`：
@@ -53,8 +54,6 @@ python main.py D:\my-project --print
 | `COMMIT_STYLE`    | `conventional`             | `conventional` / `simple`              |
 | `MAX_DIFF_LINES`  | `600`                      | 发给模型的 diff 行数上限（超出截断）   |
 | `RECENT_COMMITS`  | `5`                        | 作为风格参考的近期提交数量             |
-
-> 首次使用：点「打开 .env」，填上 `LLM_API_KEY` 保存即可；模型、接口等保持默认值就能用。
 
 ## 目录结构
 
