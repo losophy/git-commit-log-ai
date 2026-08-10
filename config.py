@@ -1,19 +1,19 @@
-import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 if getattr(sys, "frozen", False):
     PROJECT_DIR = Path(sys.executable).parent
 else:
     PROJECT_DIR = Path(__file__).resolve().parent
 
-load_dotenv(PROJECT_DIR / ".env")
+_DOTENV = dotenv_values(PROJECT_DIR / ".env")
 
 
 def _get(name: str, default: str) -> str:
-    value = os.getenv(name, default)
+    value = _DOTENV.get(name)
+    value = value or default
     return value.strip() if value else default
 
 
