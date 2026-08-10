@@ -76,9 +76,9 @@ python main.py D:\my-project --print
 
 | 变量              | 默认值                     | 说明                                   |
 | ----------------- | -------------------------- | -------------------------------------- |
-| `LLM_API_KEY`| 空                        | API Key（必填，如 sk-1a2b3c…）        |
-| `DEEPSEEK_MODEL`  | `deepseek-chat`            | 模型名                                 |
-| `LLM_BASE_URL`| `https://api.deepseek.com`| OpenAI 兼容接口地址                    |
+| `API_KEY`| 空                        | API Key（必填，如 sk-1a2b3c…）        |
+| `MODEL`  | `deepseek-chat`            | 模型名                                 |
+| `BASE_URL`| `https://api.deepseek.com`| OpenAI 兼容接口地址                    |
 | `COMMIT_LANGUAGE` | `zh`                       | `auto` / `zh` / `en`                   |
 | `COMMIT_STYLE`    | `conventional`             | `conventional` / `simple`              |
 | `MAX_DIFF_LINES`  | `600`                      | 发给模型的 diff 行数上限（超出截断）   |
@@ -103,4 +103,4 @@ git-commit-log-ai/
 ## 说明
 
 - 本工具不执行提交动作，生成的信息由你人工确认后使用——避免大模型误判导致错误提交记录。
-- 支持任意 OpenAI 兼容接口：换模型只需在 `.env` 里改 `LLM_BASE_URL` 与 `DEEPSEEK_MODEL` 即可。
+- 支持任意 OpenAI 兼容接口：换模型只需在 `.env` 里改 `BASE_URL` 与 `MODEL` 即可。

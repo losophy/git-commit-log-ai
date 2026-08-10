@@ -16,7 +16,7 @@ def _build_client(model=None, api_key=None, base_url=None) -> ChatOpenAI:
     if not api_key or api_key.startswith("sk-your"):
         raise LLMError(
             "未配置 API Key。请点击界面上的「打开 .env」按钮，"
-            "在 LLM_API_KEY 中填写你的 Key 后重试。"
+            "在 API_KEY 中填写你的 Key 后重试。"
         )
     return ChatOpenAI(
         model=model,
@@ -48,7 +48,7 @@ def friendly_error(e: Exception) -> str:
     code = getattr(e, "code", None)
 
     if status == 401:
-        return "API Key 无效或已过期，请点「打开 .env」检查 LLM_API_KEY 是否正确。"
+        return "API Key 无效或已过期，请点「打开 .env」检查 API_KEY 是否正确。"
     if status == 403:
         return "没有权限访问该模型或接口，请检查账号权限和 Model 名称。"
     if status == 404:
@@ -62,7 +62,7 @@ def friendly_error(e: Exception) -> str:
     if "Connection" in name or "connection" in str(e).lower():
         return "无法连接模型服务，请检查网络或 Base URL 是否正确。"
     if "Authentication" in name or "authentication" in str(e).lower():
-        return "API Key 认证失败，请点「打开 .env」检查 LLM_API_KEY 是否正确。"
+        return "API Key 认证失败，请点「打开 .env」检查 API_KEY 是否正确。"
     if "RateLimit" in name:
         return "请求太频繁或余额不足，请稍后再试。"
     if "BadRequest" in name or status == 400:

@@ -121,9 +121,9 @@ class App:
                 env.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
             else:
                 env.write_text(
-                    "LLM_API_KEY=你的APIKey\n"
-                    "LLM_BASE_URL=https://api.deepseek.com\n"
-                    "DEEPSEEK_MODEL=deepseek-chat\n",
+                    "API_KEY=你的APIKey\n"
+                    "BASE_URL=https://api.deepseek.com\n"
+                    "MODEL=deepseek-chat\n",
                     encoding="utf-8",
                 )
         if os.name == "nt":
