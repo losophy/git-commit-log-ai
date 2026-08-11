@@ -21,16 +21,16 @@ def app_base_dir() -> Path:
     return PROJECT_DIR
 
 
-def llm_api_key() -> str:
+def api_key() -> str:
     return _get("API_KEY", "")
 
 
-def deepseek_model() -> str:
+def model() -> str:
     return _get("MODEL", "deepseek-chat")
 
 
-def deepseek_base_url() -> str:
-    return _get("BASE_URL", "") or _get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+def base_url() -> str:
+    return _get("BASE_URL", "") or _get("base_url", "https://api.deepseek.com")
 
 
 def commit_language() -> str:

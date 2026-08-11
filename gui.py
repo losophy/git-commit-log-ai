@@ -172,7 +172,7 @@ class App:
         self.progress.start(12)
 
         self._result_queue = queue.Queue()
-        model = config.deepseek_model()
+        model = config.model()
         ctx = self.ctx
 
         def worker():

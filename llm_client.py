@@ -10,9 +10,9 @@ class LLMError(Exception):
 
 
 def _build_client(model=None, api_key=None, base_url=None) -> ChatOpenAI:
-    api_key = api_key or config.llm_api_key()
-    model = model or config.deepseek_model()
-    base_url = base_url or config.deepseek_base_url()
+    api_key = api_key or config.api_key()
+    model = model or config.model()
+    base_url = base_url or config.base_url()
     if not api_key or api_key.startswith("sk-your"):
         raise LLMError(
             "未配置 API Key。请点击界面上的「打开 .env」按钮，"
