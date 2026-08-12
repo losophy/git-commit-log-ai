@@ -46,7 +46,7 @@ def _run_git(repo_dir: str, args: List[str]) -> str:
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     try:
-        proc = subprocess.run(["git", *args], **kwargs)
+        proc = subprocess.run(["git", "-c", "core.quotepath=false", *args], **kwargs)
     except FileNotFoundError:
         raise GitError("未找到 git 命令，请确认已安装 Git 并在 PATH 中")
     except Exception as e:
@@ -82,10 +82,12 @@ def collect(repo_dir: str) -> GitContext:
     status = _run_git(repo_dir, ["status", "--porcelain"]).rstrip("\n")
     ctx.status = status if status else "（无变更）"
     ctx.file_list = [
-        line[3:].strip().replace("'", "") for line in status.splitlines() if len(line) >= 4
+        line[3:].strip().strip('"').replace("'", "")
+        for line in status.splitlines()
+        if len(line) >= 4
     ]
     ctx.untracked = [
-        line[3:].strip() for line in status.splitlines() if line.startswith("??")
+        line[3:].strip().strip('"') for line in status.splitlines() if line.startswith("??")
     ]
 
     max_lines = config.max_diff_lines()
