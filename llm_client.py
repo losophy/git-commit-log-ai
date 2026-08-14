@@ -29,6 +29,8 @@ def _build_client(model=None, api_key=None, base_url=None) -> ChatOpenAI:
 
 
 def generate_commit_message(ctx: GitContext, *, model=None, api_key=None, base_url=None) -> str:
+    if not ctx.file_list:
+        return "当前没有变更文件，无需生成提交信息。"
     messages = build_messages(ctx)
     try:
         client = _build_client(model=model, api_key=api_key, base_url=base_url)
