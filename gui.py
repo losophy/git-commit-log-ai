@@ -161,24 +161,29 @@ class App:
     def sync_message(self):
         self.message = self.msg_text.get("1.0", "end-1c")
 
-    def generate(self):
+    def generate(self, refresh: bool = False):
         if getattr(self, "_busy", False):
             return
         self._busy = True
         self.gen_btn.config(state="disabled")
         self.copy_btn.config(state="disabled")
         self.root.config(cursor="watch")
-        self.status.config(text="正在分析变更并生成提交信息…", foreground="#666")
+        text = "正在重新检查变更并生成提交信息…" if refresh else "正在分析变更并生成提交信息…"
+        self.status.config(text=text, foreground="#666")
         self.progress.start(12)
 
         self._result_queue = queue.Queue()
         model = config.model()
+        repo_dir = self.repo_dir
         ctx = self.ctx
 
         def worker():
             try:
-                result = generate_commit_message(ctx, model=model)
-                self._result_queue.put(("ok", result))
+                current_ctx = collect(repo_dir) if refresh else ctx
+                result = generate_commit_message(current_ctx, model=model)
+                self._result_queue.put(("ok", current_ctx, result))
+            except GitError as e:
+                self._result_queue.put(("giterr", e))
             except Exception as e:
                 self._result_queue.put(("err", e))
 
@@ -187,24 +192,37 @@ class App:
 
     def _poll_result(self):
         try:
-            kind, payload = self._result_queue.get_nowait()
+            kind, *payload = self._result_queue.get_nowait()
         except queue.Empty:
             self.root.after(50, self._poll_result)
             return
-        self._on_generate_done(result=payload) if kind == "ok" else self._on_generate_done(error=payload)
+        if kind == "ok":
+            ctx, result = payload
+            self._on_generate_done(result=result, ctx=ctx)
+        else:
+            self._on_generate_done(error=payload[0])
 
-    def _on_generate_done(self, result=None, error=None):
+    def _on_generate_done(self, result=None, error=None, ctx=None):
         self.progress.stop()
         self.root.config(cursor="")
         self.gen_btn.config(state="normal")
         self.copy_btn.config(state="normal")
         self._busy = False
 
+        if ctx is not None:
+            self.ctx = ctx
+            self.file_text.config(state="normal")
+            self.file_text.delete("1.0", "end")
+            self.file_text.insert("1.0", build_file_summary(ctx))
+            self.file_text.config(state="disabled")
+
         if error is None:
             self.message = result
             self.msg_text.delete("1.0", "end")
             self.msg_text.insert("1.0", result)
             self.status.config(text="生成完成", foreground="#2a7a2a")
+        elif isinstance(error, GitError):
+            self.status.config(text=f"重新收集变更失败：{error}", foreground="#a00")
         elif isinstance(error, LLMError):
             self.status.config(text="", foreground="#a00")
             self.msg_text.delete("1.0", "end")
@@ -218,7 +236,7 @@ class App:
 
     def regenerate(self):
         self.sync_message()
-        self.generate()
+        self.generate(refresh=True)
 
     def copy_message(self):
         self.sync_message()
