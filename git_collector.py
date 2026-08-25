@@ -67,6 +67,8 @@ def _run_git(
         if not check:
             return proc.returncode, stdout, stderr
         raise GitError(stderr.strip() or stdout.strip() or f"git {' '.join(args)} 返回码 {proc.returncode}")
+    if not check:
+        return proc.returncode, stdout, stderr
     return stdout
 
 
