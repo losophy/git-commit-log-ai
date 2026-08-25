@@ -87,7 +87,9 @@ class App:
         self.status.pack(side=tk.LEFT, padx=(0, 10))
 
         self.progress = ttk.Progressbar(btns, mode="indeterminate", length=180)
+        # 进度条仅在后台任务执行期间显示，闲时隐藏以避免挤压按钮区
         self.progress.pack(side=tk.LEFT, padx=(0, 10))
+        self.progress.pack_forget()
 
         self.quit_btn = ttk.Button(btns, text="退出", command=self.root.destroy, padding=(16, 8))
         self.quit_btn.pack(side=tk.RIGHT, padx=(6, 0))
@@ -180,8 +182,8 @@ class App:
         self._disable_all_buttons()
         self.root.config(cursor="watch")
         text = "正在重新检查变更并生成提交信息…" if refresh else "正在分析变更并生成提交信息…"
-        self.status.config(text=text, foreground="#666")
-        self.progress.start(12)
+        self._set_status(text, foreground="#666")
+        self._show_progress()
 
         self._result_queue = queue.Queue()
         model = config.model()
@@ -224,7 +226,7 @@ class App:
             self._on_generate_done(error=payload[0])
 
     def _on_generate_done(self, result=None, error=None, ctx=None):
-        self.progress.stop()
+        self._hide_progress()
         self.root.config(cursor="")
         self._restore_after_generate()
         self._busy = False
@@ -240,17 +242,17 @@ class App:
             self.message = result
             self.msg_text.delete("1.0", "end")
             self.msg_text.insert("1.0", result)
-            self.status.config(text="生成完成", foreground="#2a7a2a")
+            self._set_status("生成完成", foreground="#2a7a2a")
         elif isinstance(error, GitError):
-            self.status.config(text=f"重新收集变更失败：{error}", foreground="#a00")
+            self._set_status(f"重新收集变更失败：{error}", foreground="#a00")
         elif isinstance(error, LLMError):
-            self.status.config(text="", foreground="#a00")
+            self._set_status("", foreground="#a00")
             self.msg_text.delete("1.0", "end")
             self.msg_text.insert(
                 "1.0", f"生成失败：{error}\n\n你可以手动参考左侧变更列表填写提交信息。"
             )
         else:
-            self.status.config(text="", foreground="#a00")
+            self._set_status("", foreground="#a00")
             self.msg_text.delete("1.0", "end")
             self.msg_text.insert("1.0", f"生成失败：{error}")
 
@@ -262,6 +264,33 @@ class App:
         self.gen_btn.config(state="disabled")
         self.commit_btn.config(state="disabled")
         self.push_btn.config(state="disabled")
+
+    def _show_progress(self):
+        """显示进度条并启动动画（仅在后台任务执行期间）。"""
+        if not self.progress.winfo_ismapped():
+            self.progress.pack(side=tk.LEFT, padx=(0, 10))
+        try:
+            self._show_progress()
+        except tk.TclError:
+            pass
+
+    def _hide_progress(self):
+        """停止动画并隐藏进度条，释放底部空间。"""
+        try:
+            self._hide_progress()
+        except tk.TclError:
+            pass
+        try:
+            self.progress.pack_forget()
+        except tk.TclError:
+            pass
+
+    def _set_status(self, text, foreground="#666"):
+        """设置状态文字。超过 40 字符自动截断，防止过长文字挤压按钮区。"""
+        max_chars = 40
+        if len(text) > max_chars:
+            text = text[: max_chars - 1] + "…"
+        self.status.config(text=text, foreground=foreground)
 
     def _restore_after_generate(self):
         self.gen_btn.config(state="normal")
@@ -279,7 +308,7 @@ class App:
             return
         message = self.message.strip()
         if not message:
-            self.status.config(text="提交信息为空，无法提交", foreground="#a00")
+            self._set_status("提交信息为空，无法提交", foreground="#a00")
             return
         if not messagebox.askyesno(
             "确认提交",
@@ -292,8 +321,8 @@ class App:
         self._busy = True
         self._current_op = "commit"
         self._disable_all_buttons()
-        self.status.config(text="正在提交变更文件…", foreground="#666")
-        self.progress.start(12)
+        self._set_status("正在提交变更文件…", foreground="#666")
+        self._show_progress()
         self._result_queue = queue.Queue()
         repo_dir, msg = self.repo_dir, message
 
@@ -320,24 +349,22 @@ class App:
         self.root.after(50, self._poll_result)
 
     def _handle_commit(self, kind, payload):
-        self.progress.stop()
+        self._hide_progress()
         self.root.config(cursor="")
         self._busy = False
         if kind == "commit_ok":
             self._restore_after_commit_or_push()
             branch, short_hash = payload
             suffix = f"{branch} {short_hash}" if short_hash else branch
-            self.status.config(
-                text=f"提交成功（{suffix}），可点击「推送到 GitHub」", foreground="#2a7a2a"
-            )
+            self._set_status(f"提交成功（{suffix}）", foreground="#2a7a2a")
         else:
             self._restore_after_generate()
             if kind == "commit_nothing":
-                self.status.config(text="没有可提交的变更", foreground="#a00")
+                self._set_status("没有可提交的变更", foreground="#a00")
             elif kind == "giterr":
-                self.status.config(text=self._friendly_git_error(payload[0], op="提交"), foreground="#a00")
+                self._set_status(self._friendly_git_error(payload[0], op="提交"), foreground="#a00")
             else:
-                self.status.config(text=f"提交失败：{payload[0]}", foreground="#a00")
+                self._set_status(f"提交失败：{payload[0]}", foreground="#a00")
 
     def push_changes(self):
         if self.ctx is None or self._busy:
@@ -351,8 +378,8 @@ class App:
         self._busy = True
         self._current_op = "push"
         self._disable_all_buttons()
-        self.status.config(text="正在推送到远程仓库…", foreground="#666")
-        self.progress.start(12)
+        self._set_status("正在推送到远程仓库…", foreground="#666")
+        self._show_progress()
         self._result_queue = queue.Queue()
         repo_dir = self.repo_dir
 
@@ -373,26 +400,26 @@ class App:
         self.root.after(50, self._poll_result)
 
     def _handle_push(self, kind, payload):
-        self.progress.stop()
+        self._hide_progress()
         self.root.config(cursor="")
         self._busy = False
         self._restore_after_commit_or_push()
         if kind == "push_ok":
             out = payload[0]
             if "Everything up-to-date" in out or "Already up to date" in out:
-                self.status.config(text="已是最新，无需推送", foreground="#2a7a2a")
+                self._set_status("已是最新，无需推送", foreground="#2a7a2a")
             else:
-                self.status.config(text="推送成功", foreground="#2a7a2a")
+                self._set_status("推送成功", foreground="#2a7a2a")
         elif kind == "push_no_upstream":
             branch = payload[0]
-            self.status.config(
-                text=f"当前分支 {branch} 无上游分支，请手动执行：git push -u origin {branch}",
+            self._set_status(
+                f"当前分支 {branch} 无上游，请手动执行：git push -u origin {branch}",
                 foreground="#a00",
             )
         elif kind == "giterr":
-            self.status.config(text=self._friendly_git_error(payload[0], op="推送"), foreground="#a00")
+            self._set_status(self._friendly_git_error(payload[0], op="推送"), foreground="#a00")
         else:
-            self.status.config(text=f"推送失败：{payload[0]}", foreground="#a00")
+            self._set_status(f"推送失败：{payload[0]}", foreground="#a00")
 
     def _friendly_git_error(self, e, op: str):
         msg = str(e)
