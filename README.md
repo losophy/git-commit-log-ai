@@ -31,10 +31,10 @@
 
 | 阶段       | 做什么                                                       | 涉及模块                              |
 | ---------- | ------------------------------------------------------------ | ------------------------------------- |
-| 变更采集   | 对选中的 Git 项目执行 `status` / `diff HEAD` / `log`，得到变更清单、差异内容与历史风格 | `git_collector.py` / `subprocess`     |
+| 变更采集   | 对选中的 Git 项目执行 `status` / `diff HEAD` / `log`，得到变更清单、差异内容与历史风格；并封装 `git add -A` / `git commit -F -` / `git push` 写操作 | `git_collector.py` / `subprocess`     |
 | 上下文组装 | 按 `COMMIT_STYLE` 与 `COMMIT_LANGUAGE` 拼装 system / user Prompt，长 diff 截断 | `prompt_builder.py` / `config.py`     |
 | 模型生成   | 通过 OpenAI 兼容接口调用大模型，生成提交信息并清理多余前后缀/代码块 | `llm_client.py` / `langchain-openai`  |
-| 界面交付   | 后台线程生成，`queue` 轮询回填界面；支持编辑、提交（`git commit`）、推送（`git push`）、重新生成 | `gui.py` / `tkinter` |
+| 界面交付   | 后台线程生成，`queue` 轮询回填界面；支持编辑、提交（`git commit`）、推送（`git push`，提交成功后弹窗询问）、重新生成 | `gui.py` / `tkinter` |
 
 ![git-commit-log-ai 系统架构图](images/architecture.png)
 ![git-commit-log-ai gui](images/git-commit-log-ai-gui.png)
@@ -68,7 +68,7 @@ python main.py D:\my-project --print
 1. 双击 `git-commit-log-ai.exe` 运行
 2. 点击上方「打开.env」，填上模型名等配置
 3. 点击上方「选择项目」，选一个 Git 项目根目录
-4. 软件自动扫描该项目的变更并生成提交信息 → 点「提交变更文件」执行 `git commit`，提交成功后会弹窗询问是否推送到 GitHub，确认即执行 `git push`
+4. 软件自动扫描该项目的变更并生成提交信息（首次约需 10~30 秒，请耐心等待）→ 点「提交变更文件」执行 `git commit`，提交成功后会弹窗询问是否推送到 GitHub，确认即执行 `git push`
 
 ## 配置
 
@@ -90,7 +90,7 @@ python main.py D:\my-project --print
 git-commit-log-ai/
 ├── main.py                 # 入口
 ├── config.py               # .env 加载与配置
-├── git_collector.py        # git 命令收集（status + diff + log）
+├── git_collector.py        # git 命令封装（采集 status/diff/log + 提交 add/commit/push）
 ├── prompt_builder.py       # 提示词组装
 ├── llm_client.py           # 模型调用（OpenAI 兼容接口）
 ├── gui.py                  # 图形界面（tkinter）
