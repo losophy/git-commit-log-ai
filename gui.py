@@ -2,6 +2,7 @@ import os
 import queue
 import re
 import threading
+import time
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
@@ -19,6 +20,15 @@ from git_collector import (
 )
 from llm_client import LLMError, generate_commit_message
 from prompt_builder import build_file_summary
+
+
+def _log(msg: str) -> None:
+    """写入 exe 同目录 gui-debug.log，便于排查"卡住"类问题。"""
+    try:
+        with open(config.app_base_dir() / "gui-debug.log", "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
 
 
 class App:
@@ -82,22 +92,29 @@ class App:
 
         btns = ttk.Frame(main)
         btns.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        # 严格分列：状态吸收剩余空间，进度条与按钮列固定，状态文字过长时不会挤压按钮
+        btns.columnconfigure(0, weight=1)  # 状态列
+        btns.columnconfigure(1, weight=0)  # 进度条列
+        btns.columnconfigure(2, weight=0)  # 按钮列（按内容定宽）
 
-        self.status = ttk.Label(btns, text="", foreground="#666")
-        self.status.pack(side=tk.LEFT, padx=(0, 10))
+        self.status = ttk.Label(btns, text="", foreground="#666", anchor="w")
+        self.status.grid(row=0, column=0, sticky="ew", padx=(0, 10))
 
         self.progress = ttk.Progressbar(btns, mode="indeterminate", length=180)
-        # 进度条仅在后台任务执行期间显示，闲时隐藏以避免挤压按钮区
-        self.progress.pack(side=tk.LEFT, padx=(0, 10))
-        self.progress.pack_forget()
+        # 进度条仅在后台任务执行期间显示，闲时隐藏（grid_remove 不占布局空间）
+        self.progress.grid(row=0, column=1, sticky="w", padx=(0, 10))
+        self.progress.grid_remove()
 
-        self.quit_btn = ttk.Button(btns, text="退出", command=self.root.destroy, padding=(16, 8))
+        # 按钮子 frame：在 column=2 内用 pack 排版（RIGHT 顺序：先 pack 的在最右）
+        btn_frame = ttk.Frame(btns)
+        btn_frame.grid(row=0, column=2, sticky="e")
+        self.quit_btn = ttk.Button(btn_frame, text="退出", command=self.root.destroy, padding=(16, 8))
         self.quit_btn.pack(side=tk.RIGHT, padx=(6, 0))
-        self.push_btn = ttk.Button(btns, text="推送到 GitHub", command=self.push_changes, padding=(16, 8))
+        self.push_btn = ttk.Button(btn_frame, text="推送到 GitHub", command=self.push_changes, padding=(16, 8))
         self.push_btn.pack(side=tk.RIGHT, padx=(6, 0))
-        self.commit_btn = ttk.Button(btns, text="提交变更文件", command=self.commit_changes, padding=(16, 8))
+        self.commit_btn = ttk.Button(btn_frame, text="提交变更文件", command=self.commit_changes, padding=(16, 8))
         self.commit_btn.pack(side=tk.RIGHT, padx=(6, 0))
-        self.gen_btn = ttk.Button(btns, text="重新生成", command=self.regenerate, padding=(16, 8))
+        self.gen_btn = ttk.Button(btn_frame, text="重新生成", command=self.regenerate, padding=(16, 8))
         self.gen_btn.pack(side=tk.RIGHT, padx=(0, 12))
 
         if self.ctx is None:
@@ -181,7 +198,7 @@ class App:
         self._current_op = "generate"
         self._disable_all_buttons()
         self.root.config(cursor="watch")
-        text = "正在重新检查变更并生成提交信息…" if refresh else "正在分析变更并生成提交信息…"
+        text = "正在重新检查变更并生成提交信息…" if refresh else "正在分析变更并生成提交信息…（首次约需 10~30 秒，请耐心等待）"
         self._set_status(text, foreground="#666")
         self._show_progress()
 
@@ -189,15 +206,22 @@ class App:
         model = config.model()
         repo_dir = self.repo_dir
         ctx = self.ctx
+        _log(f"[generate] 开始 op={refresh and 'refresh' or 'first'} repo={repo_dir}")
 
         def worker():
             try:
+                t0 = time.time()
                 current_ctx = collect(repo_dir) if refresh else ctx
+                _log(f"[generate] collect 完成 耗时={time.time()-t0:.1f}s")
+                t0 = time.time()
                 result = generate_commit_message(current_ctx, model=model)
+                _log(f"[generate] LLM 完成 耗时={time.time()-t0:.1f}s")
                 self._result_queue.put(("ok", current_ctx, result))
             except GitError as e:
+                _log(f"[generate] GitError: {e}")
                 self._result_queue.put(("giterr", e))
             except Exception as e:
+                _log(f"[generate] 异常 {type(e).__name__}: {e}")
                 self._result_queue.put(("err", e))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -211,6 +235,7 @@ class App:
             return
         op = self._current_op
         self._current_op = None
+        _log(f"[poll] 收到结果 op={op} kind={kind}")
         if op == "commit":
             self._handle_commit(kind, payload)
         elif op == "push":
@@ -267,21 +292,21 @@ class App:
 
     def _show_progress(self):
         """显示进度条并启动动画（仅在后台任务执行期间）。"""
-        if not self.progress.winfo_ismapped():
-            self.progress.pack(side=tk.LEFT, padx=(0, 10))
         try:
-            self._show_progress()
+            if not self.progress.winfo_ismapped():
+                self.progress.grid(row=0, column=1, sticky="w", padx=(0, 10))
+            self.progress.start(12)
         except tk.TclError:
             pass
 
     def _hide_progress(self):
         """停止动画并隐藏进度条，释放底部空间。"""
         try:
-            self._hide_progress()
+            self.progress.stop()
         except tk.TclError:
             pass
         try:
-            self.progress.pack_forget()
+            self.progress.grid_remove()
         except tk.TclError:
             pass
 
@@ -328,21 +353,27 @@ class App:
 
         def worker():
             try:
+                t0 = time.time()
                 add_all(repo_dir)
+                _log(f"[commit] add_all 完成 耗时={time.time()-t0:.1f}s")
                 try:
                     out = commit(repo_dir, msg)
                 except GitError as e:
                     if "nothing to commit" in str(e):
+                        _log("[commit] 无变更可提交")
                         self._result_queue.put(("commit_nothing",))
                         return
                     raise
+                _log(f"[commit] commit 完成 耗时={time.time()-t0:.1f}s")
                 branch = current_branch(repo_dir)
                 m = re.search(r"\[[^\]]+\s([0-9a-f]+)\]", out)
                 short_hash = m.group(1) if m else ""
                 self._result_queue.put(("commit_ok", branch, short_hash))
             except GitError as e:
+                _log(f"[commit] GitError: {e}")
                 self._result_queue.put(("giterr", e))
             except Exception as e:
+                _log(f"[commit] 异常 {type(e).__name__}: {e}")
                 self._result_queue.put(("err", e))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -385,15 +416,20 @@ class App:
 
         def worker():
             try:
+                t0 = time.time()
                 if not has_upstream(repo_dir):
                     branch = current_branch(repo_dir)
+                    _log(f"[push] 无 upstream 分支={branch}")
                     self._result_queue.put(("push_no_upstream", branch))
                     return
                 out = push(repo_dir)
+                _log(f"[push] push 完成 耗时={time.time()-t0:.1f}s")
                 self._result_queue.put(("push_ok", out))
             except GitError as e:
+                _log(f"[push] GitError: {e}")
                 self._result_queue.put(("giterr", e))
             except Exception as e:
+                _log(f"[push] 异常 {type(e).__name__}: {e}")
                 self._result_queue.put(("err", e))
 
         threading.Thread(target=worker, daemon=True).start()

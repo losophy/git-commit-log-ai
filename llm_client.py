@@ -24,7 +24,7 @@ def _build_client(model=None, api_key=None, base_url=None) -> ChatOpenAI:
         base_url=base_url,
         temperature=0.3,
         max_tokens=800,
-        timeout=120,
+        timeout=90,
     )
 
 
