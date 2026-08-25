@@ -110,8 +110,6 @@ class App:
         btn_frame.grid(row=0, column=2, sticky="e")
         self.quit_btn = ttk.Button(btn_frame, text="退出", command=self.root.destroy, padding=(16, 8))
         self.quit_btn.pack(side=tk.RIGHT, padx=(6, 0))
-        self.push_btn = ttk.Button(btn_frame, text="推送到 GitHub", command=self.push_changes, padding=(16, 8))
-        self.push_btn.pack(side=tk.RIGHT, padx=(6, 0))
         self.commit_btn = ttk.Button(btn_frame, text="提交变更文件", command=self.commit_changes, padding=(16, 8))
         self.commit_btn.pack(side=tk.RIGHT, padx=(6, 0))
         self.gen_btn = ttk.Button(btn_frame, text="重新生成", command=self.regenerate, padding=(16, 8))
@@ -288,7 +286,6 @@ class App:
     def _disable_all_buttons(self):
         self.gen_btn.config(state="disabled")
         self.commit_btn.config(state="disabled")
-        self.push_btn.config(state="disabled")
 
     def _show_progress(self):
         """显示进度条并启动动画（仅在后台任务执行期间）。"""
@@ -320,12 +317,6 @@ class App:
     def _restore_after_generate(self):
         self.gen_btn.config(state="normal")
         self.commit_btn.config(state="normal")
-        self.push_btn.config(state="disabled")
-
-    def _restore_after_commit_or_push(self):
-        self.gen_btn.config(state="normal")
-        self.commit_btn.config(state="normal")
-        self.push_btn.config(state="normal")
 
     def commit_changes(self):
         self.sync_message()
@@ -384,10 +375,12 @@ class App:
         self.root.config(cursor="")
         self._busy = False
         if kind == "commit_ok":
-            self._restore_after_commit_or_push()
+            self._restore_after_generate()
             branch, short_hash = payload
             suffix = f"{branch} {short_hash}" if short_hash else branch
             self._set_status(f"提交成功（{suffix}）", foreground="#2a7a2a")
+            # 提交成功后弹窗询问是否推送到 GitHub
+            self._ask_push(repo_dir=self.repo_dir, branch=branch, suffix=suffix)
         else:
             self._restore_after_generate()
             if kind == "commit_nothing":
@@ -397,14 +390,18 @@ class App:
             else:
                 self._set_status(f"提交失败：{payload[0]}", foreground="#a00")
 
-    def push_changes(self):
-        if self.ctx is None or self._busy:
-            return
+    def _ask_push(self, repo_dir, branch, suffix):
+        """commit 成功后弹窗询问是否推送到 GitHub。"""
         if not messagebox.askyesno(
-            "确认推送",
-            "即将把本地提交推送到远程仓库：\n\n  git push\n\n是否继续？",
+            "推送到 GitHub",
+            f"提交成功（{suffix}）。\n\n是否立即推送到远程仓库？\n\n  git push",
             parent=self.root,
         ):
+            return
+        self._do_push(repo_dir)
+
+    def _do_push(self, repo_dir):
+        if self.ctx is None or self._busy:
             return
         self._busy = True
         self._current_op = "push"
@@ -439,7 +436,7 @@ class App:
         self._hide_progress()
         self.root.config(cursor="")
         self._busy = False
-        self._restore_after_commit_or_push()
+        self._restore_after_generate()
         if kind == "push_ok":
             out = payload[0]
             if "Everything up-to-date" in out or "Already up to date" in out:
@@ -448,14 +445,22 @@ class App:
                 self._set_status("推送成功", foreground="#2a7a2a")
         elif kind == "push_no_upstream":
             branch = payload[0]
-            self._set_status(
-                f"当前分支 {branch} 无上游，请手动执行：git push -u origin {branch}",
-                foreground="#a00",
+            self._set_status(f"推送已跳过：当前分支 {branch} 无上游分支", foreground="#a00")
+            messagebox.showinfo(
+                "推送未执行",
+                f"当前分支 {branch} 没有上游分支，无法直接推送。\n\n请手动执行：\n\n  git push -u origin {branch}",
+                parent=self.root,
             )
         elif kind == "giterr":
-            self._set_status(self._friendly_git_error(payload[0], op="推送"), foreground="#a00")
+            msg = self._friendly_git_error(payload[0], op="推送")
+            self._set_status(msg, foreground="#a00")
+            if messagebox.askyesno("推送失败", f"{msg}\n\n是否重试推送？", parent=self.root):
+                self._do_push(self.repo_dir)
         else:
-            self._set_status(f"推送失败：{payload[0]}", foreground="#a00")
+            msg = f"推送失败：{payload[0]}"
+            self._set_status(msg, foreground="#a00")
+            if messagebox.askyesno("推送失败", f"{msg}\n\n是否重试推送？", parent=self.root):
+                self._do_push(self.repo_dir)
 
     def _friendly_git_error(self, e, op: str):
         msg = str(e)
