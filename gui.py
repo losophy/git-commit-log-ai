@@ -1,13 +1,22 @@
 import os
 import queue
+import re
 import threading
 
-import pyperclip
 import tkinter as tk
-from tkinter import filedialog, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 import config
-from git_collector import GitContext, GitError, collect
+from git_collector import (
+    GitContext,
+    GitError,
+    add_all,
+    collect,
+    commit,
+    current_branch,
+    has_upstream,
+    push,
+)
 from llm_client import LLMError, generate_commit_message
 from prompt_builder import build_file_summary
 
@@ -18,6 +27,8 @@ class App:
         self.repo_dir = repo_dir
         self.ctx = ctx
         self.message = ""
+        self._busy = False
+        self._current_op = None
 
         if ctx is not None:
             root.title(f"git-commit-log-ai · {ctx.project_short}")
@@ -80,14 +91,15 @@ class App:
 
         self.quit_btn = ttk.Button(btns, text="退出", command=self.root.destroy, padding=(16, 8))
         self.quit_btn.pack(side=tk.RIGHT, padx=(6, 0))
-        self.copy_btn = ttk.Button(btns, text="复制到剪贴板", command=self.copy_message, padding=(16, 8))
-        self.copy_btn.pack(side=tk.RIGHT)
+        self.push_btn = ttk.Button(btns, text="推送到 GitHub", command=self.push_changes, padding=(16, 8))
+        self.push_btn.pack(side=tk.RIGHT, padx=(6, 0))
+        self.commit_btn = ttk.Button(btns, text="提交变更文件", command=self.commit_changes, padding=(16, 8))
+        self.commit_btn.pack(side=tk.RIGHT, padx=(6, 0))
         self.gen_btn = ttk.Button(btns, text="重新生成", command=self.regenerate, padding=(16, 8))
         self.gen_btn.pack(side=tk.RIGHT, padx=(0, 12))
 
         if self.ctx is None:
-            self.gen_btn.config(state="disabled")
-            self.copy_btn.config(state="disabled")
+            self._disable_all_buttons()
             self.status.config(text="未选择 Git 项目目录", foreground="#a00")
         else:
             self.msg_text.delete("1.0", "end")
@@ -154,19 +166,18 @@ class App:
         self.file_text.config(state="disabled")
         self.msg_text.delete("1.0", "end")
         self.msg_text.insert("1.0", "正在生成提交信息…")
-        self.gen_btn.config(state="normal")
-        self.copy_btn.config(state="normal")
+        self._restore_after_generate()
         self.generate()
 
     def sync_message(self):
         self.message = self.msg_text.get("1.0", "end-1c")
 
     def generate(self, refresh: bool = False):
-        if getattr(self, "_busy", False):
+        if self._busy:
             return
         self._busy = True
-        self.gen_btn.config(state="disabled")
-        self.copy_btn.config(state="disabled")
+        self._current_op = "generate"
+        self._disable_all_buttons()
         self.root.config(cursor="watch")
         text = "正在重新检查变更并生成提交信息…" if refresh else "正在分析变更并生成提交信息…"
         self.status.config(text=text, foreground="#666")
@@ -196,6 +207,16 @@ class App:
         except queue.Empty:
             self.root.after(50, self._poll_result)
             return
+        op = self._current_op
+        self._current_op = None
+        if op == "commit":
+            self._handle_commit(kind, payload)
+        elif op == "push":
+            self._handle_push(kind, payload)
+        else:
+            self._handle_generate(kind, payload)
+
+    def _handle_generate(self, kind, payload):
         if kind == "ok":
             ctx, result = payload
             self._on_generate_done(result=result, ctx=ctx)
@@ -205,8 +226,7 @@ class App:
     def _on_generate_done(self, result=None, error=None, ctx=None):
         self.progress.stop()
         self.root.config(cursor="")
-        self.gen_btn.config(state="normal")
-        self.copy_btn.config(state="normal")
+        self._restore_after_generate()
         self._busy = False
 
         if ctx is not None:
@@ -238,14 +258,153 @@ class App:
         self.sync_message()
         self.generate(refresh=True)
 
-    def copy_message(self):
+    def _disable_all_buttons(self):
+        self.gen_btn.config(state="disabled")
+        self.commit_btn.config(state="disabled")
+        self.push_btn.config(state="disabled")
+
+    def _restore_after_generate(self):
+        self.gen_btn.config(state="normal")
+        self.commit_btn.config(state="normal")
+        self.push_btn.config(state="disabled")
+
+    def _restore_after_commit_or_push(self):
+        self.gen_btn.config(state="normal")
+        self.commit_btn.config(state="normal")
+        self.push_btn.config(state="normal")
+
+    def commit_changes(self):
         self.sync_message()
-        if not self.message:
-            # 复制 fallback 提示文本
-            pyperclip.copy(self.msg_text.get("1.0", "end-1c"))
+        if self.ctx is None or self._busy:
+            return
+        message = self.message.strip()
+        if not message:
+            self.status.config(text="提交信息为空，无法提交", foreground="#a00")
+            return
+        if not messagebox.askyesno(
+            "确认提交",
+            "即将把全部变更（含未跟踪新文件）提交为一个 commit：\n\n"
+            "  git add -A\n  git commit -F -\n\n"
+            f"提交信息：\n{message}\n\n是否继续？",
+            parent=self.root,
+        ):
+            return
+        self._busy = True
+        self._current_op = "commit"
+        self._disable_all_buttons()
+        self.status.config(text="正在提交变更文件…", foreground="#666")
+        self.progress.start(12)
+        self._result_queue = queue.Queue()
+        repo_dir, msg = self.repo_dir, message
+
+        def worker():
+            try:
+                add_all(repo_dir)
+                try:
+                    out = commit(repo_dir, msg)
+                except GitError as e:
+                    if "nothing to commit" in str(e):
+                        self._result_queue.put(("commit_nothing",))
+                        return
+                    raise
+                branch = current_branch(repo_dir)
+                m = re.search(r"\[[^\]]+\s([0-9a-f]+)\]", out)
+                short_hash = m.group(1) if m else ""
+                self._result_queue.put(("commit_ok", branch, short_hash))
+            except GitError as e:
+                self._result_queue.put(("giterr", e))
+            except Exception as e:
+                self._result_queue.put(("err", e))
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.root.after(50, self._poll_result)
+
+    def _handle_commit(self, kind, payload):
+        self.progress.stop()
+        self.root.config(cursor="")
+        self._busy = False
+        if kind == "commit_ok":
+            self._restore_after_commit_or_push()
+            branch, short_hash = payload
+            suffix = f"{branch} {short_hash}" if short_hash else branch
+            self.status.config(
+                text=f"提交成功（{suffix}），可点击「推送到 GitHub」", foreground="#2a7a2a"
+            )
         else:
-            pyperclip.copy(self.message)
-        self.status.config(text="已复制到剪贴板", foreground="#2a7a2a")
+            self._restore_after_generate()
+            if kind == "commit_nothing":
+                self.status.config(text="没有可提交的变更", foreground="#a00")
+            elif kind == "giterr":
+                self.status.config(text=self._friendly_git_error(payload[0], op="提交"), foreground="#a00")
+            else:
+                self.status.config(text=f"提交失败：{payload[0]}", foreground="#a00")
+
+    def push_changes(self):
+        if self.ctx is None or self._busy:
+            return
+        if not messagebox.askyesno(
+            "确认推送",
+            "即将把本地提交推送到远程仓库：\n\n  git push\n\n是否继续？",
+            parent=self.root,
+        ):
+            return
+        self._busy = True
+        self._current_op = "push"
+        self._disable_all_buttons()
+        self.status.config(text="正在推送到远程仓库…", foreground="#666")
+        self.progress.start(12)
+        self._result_queue = queue.Queue()
+        repo_dir = self.repo_dir
+
+        def worker():
+            try:
+                if not has_upstream(repo_dir):
+                    branch = current_branch(repo_dir)
+                    self._result_queue.put(("push_no_upstream", branch))
+                    return
+                out = push(repo_dir)
+                self._result_queue.put(("push_ok", out))
+            except GitError as e:
+                self._result_queue.put(("giterr", e))
+            except Exception as e:
+                self._result_queue.put(("err", e))
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.root.after(50, self._poll_result)
+
+    def _handle_push(self, kind, payload):
+        self.progress.stop()
+        self.root.config(cursor="")
+        self._busy = False
+        self._restore_after_commit_or_push()
+        if kind == "push_ok":
+            out = payload[0]
+            if "Everything up-to-date" in out or "Already up to date" in out:
+                self.status.config(text="已是最新，无需推送", foreground="#2a7a2a")
+            else:
+                self.status.config(text="推送成功", foreground="#2a7a2a")
+        elif kind == "push_no_upstream":
+            branch = payload[0]
+            self.status.config(
+                text=f"当前分支 {branch} 无上游分支，请手动执行：git push -u origin {branch}",
+                foreground="#a00",
+            )
+        elif kind == "giterr":
+            self.status.config(text=self._friendly_git_error(payload[0], op="推送"), foreground="#a00")
+        else:
+            self.status.config(text=f"推送失败：{payload[0]}", foreground="#a00")
+
+    def _friendly_git_error(self, e, op: str):
+        msg = str(e)
+        if "Please tell me who you are" in msg:
+            return f"{op}失败：未配置 git 身份，请先执行 git config --global user.name / user.email"
+        if "does not appear to be a git repository" in msg:
+            return f"{op}失败：未配置远程仓库（origin），请先添加远程仓库"
+        if "could not read Username" in msg or "Authentication failed" in msg or "Permission denied" in msg:
+            return f"{op}失败：远程仓库认证失败，请检查凭据"
+        if "Could not resolve host" in msg or "unable to access" in msg:
+            return f"{op}失败：无法访问远程仓库，请检查网络"
+        return f"{op}失败：{msg}"
 
 
 def run_gui(repo_dir: str, ctx: GitContext) -> None:

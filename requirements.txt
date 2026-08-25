@@ -21,5 +21,3 @@ openai>=1.0,<3
 python-dotenv>=1.0
 
 # ---------- GUI (Tkinter built-in, no extra dep) ----------
-# pyperclip for clipboard copy
-pyperclip>=1.8

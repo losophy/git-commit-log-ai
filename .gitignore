@@ -4,3 +4,4 @@ build/
 *.spec
 .env
 git-commit-log-ai.exe
+.workbuddy

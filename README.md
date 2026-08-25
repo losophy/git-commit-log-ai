@@ -6,7 +6,7 @@
 
 - 无需监听 TortoiseGit 窗口：打开后选择任意 Git 项目，自动扫描该项目全部未提交变更（含未跟踪新文件）
 - 自动分析 `git status + git diff HEAD + 近期提交历史`，生成提交信息
-- 图形界面：左侧变更文件列表，右侧提交信息（**可直接编辑**），支持「复制到剪贴板」与「重新生成」
+- 图形界面：左侧变更文件列表，右侧提交信息（**可直接编辑**），支持「提交变更文件」「推送到 GitHub」与「重新生成」
 - 模型名等配置统一写在 `.env`，界面点「打开 .env」即可修改，无需每次改代码
 - 兼容任何 OpenAI 兼容接口：DeepSeek、阿里百炼（通义千问）、Ollama 本地等
 
@@ -19,11 +19,11 @@
 - **规范与语言双项可配，贴近团队约定**
     - 支持 `Conventional Commits` 与 `simple` 两种风格，语言可选 `auto` / `zh` / `en`，`auto` 时按近期提交历史自动判断语言。
 - **GUI + CLI 双模式交付**
-    - `tkinter` 图形界面可直接编辑、复制提交信息；也支持 `--print` 命令行模式，把提交信息直接打印到终端，便于脚本集成。
+    - `tkinter` 图形界面可直接编辑、提交、推送提交信息；也支持 `--print` 命令行模式，把提交信息直接打印到终端，便于脚本集成。
 - **面向 Windows 的零依赖交付**
     - 基于 `PyInstaller` 一键打包成免安装 exe，双击即用；不依赖外部窗口、不监听钩子，配置全部收敛在 `.env`。
 - **人工确认，安全兜底**
-    - 工具不执行提交动作，生成的信息由你人工确认后使用——避免大模型误判导致错误提交记录。
+    - 生成的信息可**人工编辑并确认**后一键执行 `git commit`；推送前同样有二次确认，且不自动设置上游分支——避免大模型误判导致错误提交记录。
 
 ## 系统架构
 
@@ -34,7 +34,7 @@
 | 变更采集   | 对选中的 Git 项目执行 `status` / `diff HEAD` / `log`，得到变更清单、差异内容与历史风格 | `git_collector.py` / `subprocess`     |
 | 上下文组装 | 按 `COMMIT_STYLE` 与 `COMMIT_LANGUAGE` 拼装 system / user Prompt，长 diff 截断 | `prompt_builder.py` / `config.py`     |
 | 模型生成   | 通过 OpenAI 兼容接口调用大模型，生成提交信息并清理多余前后缀/代码块 | `llm_client.py` / `langchain-openai`  |
-| 界面交付   | 后台线程生成，`queue` 轮询回填界面；支持编辑、复制、重新生成 | `gui.py` / `tkinter` / `pyperclip`    |
+| 界面交付   | 后台线程生成，`queue` 轮询回填界面；支持编辑、提交（`git commit`）、推送（`git push`）、重新生成 | `gui.py` / `tkinter` |
 
 ![git-commit-log-ai 系统架构图](images/architecture.png)
 ![git-commit-log-ai gui](images/git-commit-log-ai-gui.png)
@@ -68,7 +68,7 @@ python main.py D:\my-project --print
 1. 双击 `git-commit-log-ai.exe` 运行
 2. 点击上方「打开.env」，填上模型名等配置
 3. 点击上方「选择项目」，选一个 Git 项目根目录
-4. 软件自动扫描该项目的变更并生成提交信息 → 点「复制到剪贴板」→ 在 TortoiseGit 或命令行粘贴使用
+4. 软件自动扫描该项目的变更并生成提交信息 → 点「提交变更文件」执行 `git commit`，成功后点「推送到 GitHub」执行 `git push`
 
 ## 配置
 
@@ -102,5 +102,5 @@ git-commit-log-ai/
 
 ## 说明
 
-- 本工具不执行提交动作，生成的信息由你人工确认后使用——避免大模型误判导致错误提交记录。
+- 提交与推送前均有二次确认；推送时若分支无上游，不自动设置，请手动执行 `git push -u origin <分支名>`。
 - 支持任意 OpenAI 兼容接口：换模型只需在 `.env` 里改 `BASE_URL` 与 `MODEL` 即可。
