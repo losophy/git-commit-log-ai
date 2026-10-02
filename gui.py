@@ -18,7 +18,7 @@ from git_collector import (
     has_upstream,
     push,
 )
-from llm_client import LLMError, generate_commit_message
+from llm_client import LLMError, generate_commit_message, set_logger
 from prompt_builder import build_file_summary
 
 
@@ -196,7 +196,11 @@ class App:
         self._current_op = "generate"
         self._disable_all_buttons()
         self.root.config(cursor="watch")
-        text = "正在重新检查变更并生成提交信息…" if refresh else "正在分析变更并生成提交信息…（首次约需 10~30 秒，请耐心等待）"
+        text = (
+            "正在重新检查变更并生成提交信息…"
+            if refresh
+            else "正在分析变更并生成提交信息…（首次启动需解压，约 5~15 秒）"
+        )
         self._set_status(text, foreground="#666")
         self._show_progress()
 
@@ -261,21 +265,33 @@ class App:
             self.file_text.insert("1.0", build_file_summary(ctx))
             self.file_text.config(state="disabled")
 
-        if error is None:
-            self.message = result
+        text = (result or "").strip()
+        if error is None and text:
+            self.message = text
             self.msg_text.delete("1.0", "end")
-            self.msg_text.insert("1.0", result)
+            self.msg_text.insert("1.0", text)
             self._set_status("生成完成", foreground="#2a7a2a")
+        elif error is None:
+            # 模型返回空内容：绝不能当成功处理，否则用户只看到一个空白文本框
+            self.message = ""
+            self.msg_text.delete("1.0", "end")
+            self.msg_text.insert(
+                "1.0",
+                "模型返回了空内容，未生成提交信息。\n\n"
+                "请点「重新生成」重试；若反复出现，请检查 .env 中的 "
+                "MAX_TOKENS（思考型模型建议 2048 以上）与 THINKING（建议 off）配置。",
+            )
+            self._set_status("模型返回空内容，请重试", foreground="#a00")
         elif isinstance(error, GitError):
             self._set_status(f"重新收集变更失败：{error}", foreground="#a00")
         elif isinstance(error, LLMError):
-            self._set_status("", foreground="#a00")
+            self._set_status("生成失败，请按右侧提示处理", foreground="#a00")
             self.msg_text.delete("1.0", "end")
             self.msg_text.insert(
                 "1.0", f"生成失败：{error}\n\n你可以手动参考左侧变更列表填写提交信息。"
             )
         else:
-            self._set_status("", foreground="#a00")
+            self._set_status("生成失败，请按右侧提示处理", foreground="#a00")
             self.msg_text.delete("1.0", "end")
             self.msg_text.insert("1.0", f"生成失败：{error}")
 
@@ -476,6 +492,8 @@ class App:
 
 
 def run_gui(repo_dir: str, ctx: GitContext) -> None:
+    # 让 llm_client 的诊断信息（finish_reason / token 用量 / 空内容归因）写入 gui-debug.log
+    set_logger(_log)
     root = tk.Tk()
     App(root, repo_dir, ctx)
     root.mainloop()

@@ -41,6 +41,24 @@ def commit_style() -> str:
     return _get("COMMIT_STYLE", "conventional")
 
 
+def max_tokens() -> int:
+    """单次生成的最大 token 预算。
+
+    思考型模型会把 reasoning 和正文都算在这个额度里，额度太小会导致
+    «思考把额度用光、正文为空»，因此下限保护到 512。
+    """
+    try:
+        return max(512, int(_get("MAX_TOKENS", "2048")))
+    except ValueError:
+        return 2048
+
+
+def thinking() -> str:
+    """思考模式：off（默认，直接输出正文）/ on（保留思考）/ auto（先思考，正文为空再降级关闭）"""
+    value = _get("THINKING", "off").lower()
+    return value if value in ("off", "on", "auto") else "off"
+
+
 def max_diff_lines() -> int:
     try:
         return max(1, int(_get("MAX_DIFF_LINES", "600")))

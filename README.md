@@ -16,6 +16,8 @@
     - 同时采集 `status`（变更清单）、`diff HEAD`（差异内容）和 `log`（历史风格），近期提交只作为风格参考，避免模型照抄旧内容，先理解改动目的再组织语言。
 - **长 diff 智能截断，控制 token 开销**
     - 超过 `MAX_DIFF_LINES` 的差异自动截断并显式标注，大仓库也能一次稳定生成，不会把上下文撑爆。
+- **思考型模型开箱可用，绝不交付空白结果**
+    - 新版推理模型会把「思考」和正文一起算进 `max_tokens`，额度不足时正文为空。这里默认以 `enable_thinking=false` 直接输出正文（实测 13.6s → 1.5s），并提供 `THINKING=on / auto` 开关；同时把 `finish_reason`、token 用量、思考字段计入日志，正文为空时明确报错并给出修复建议，而不是把空白当成功。
 - **规范与语言双项可配，贴近团队约定**
     - 支持 `Conventional Commits` 与 `simple` 两种风格，语言可选 `auto` / `zh` / `en`，`auto` 时按近期提交历史自动判断语言。
 - **GUI + CLI 双模式交付**
@@ -33,7 +35,7 @@
 | ---------- | ------------------------------------------------------------ | ------------------------------------- |
 | 变更采集   | 对选中的 Git 项目执行 `status` / `diff HEAD` / `log`，得到变更清单、差异内容与历史风格；并封装 `git add -A` / `git commit -F -` / `git push` 写操作 | `git_collector.py` / `subprocess`     |
 | 上下文组装 | 按 `COMMIT_STYLE` 与 `COMMIT_LANGUAGE` 拼装 system / user Prompt，长 diff 截断 | `prompt_builder.py` / `config.py`     |
-| 模型生成   | 通过 OpenAI 兼容接口调用大模型，生成提交信息并清理多余前后缀/代码块 | `llm_client.py` / `langchain-openai`  |
+| 模型生成   | 通过 OpenAI 兼容接口调用大模型；`MAX_TOKENS` 额度与 `THINKING` 思考开关可配，响应归一化（兼容分块 content）+ 空内容拦截 + 诊断日志 | `llm_client.py` / `langchain-openai`  |
 | 界面交付   | 后台线程生成，`queue` 轮询回填界面；支持编辑、提交（`git commit`）、推送（`git push`，提交成功后弹窗询问）、重新生成 | `gui.py` / `tkinter` |
 
 ![git-commit-log-ai 系统架构图](images/architecture.png)
@@ -68,7 +70,7 @@ python main.py D:\my-project --print
 1. 双击 `git-commit-log-ai.exe` 运行
 2. 点击上方「打开.env」，填上模型名等配置
 3. 点击上方「选择项目」，选一个 Git 项目根目录
-4. 软件自动扫描该项目的变更并生成提交信息（首次约需 10~30 秒，请耐心等待）→ 点「提交变更文件」执行 `git commit`，提交成功后会弹窗询问是否推送到 GitHub，确认即执行 `git push`
+4. 软件自动扫描该项目的变更并生成提交信息 → 点「提交变更文件」执行 `git commit`，提交成功后会弹窗询问是否推送到 GitHub，确认即执行 `git push`
 
 ## 配置
 
@@ -79,6 +81,8 @@ python main.py D:\my-project --print
 | `API_KEY`| 空                        | API Key（必填，如 sk-1a2b3c…）        |
 | `MODEL`  | `deepseek-chat`            | 模型名                                 |
 | `BASE_URL`| `https://api.deepseek.com`| OpenAI 兼容接口地址                    |
+| `MAX_TOKENS`      | `2048`                     | 单次生成的 token 预算（思考也占用该额度，下限保护 512） |
+| `THINKING`        | `off`                      | `off` 直接输出正文 / `on` 保留思考 / `auto` 先思考、正文为空时降级关闭重试 |
 | `COMMIT_LANGUAGE` | `zh`                       | `auto` / `zh` / `en`                   |
 | `COMMIT_STYLE`    | `conventional`             | `conventional` / `simple`              |
 | `MAX_DIFF_LINES`  | `600`                      | 发给模型的 diff 行数上限（超出截断）   |
@@ -104,3 +108,4 @@ git-commit-log-ai/
 
 - 提交前有确认框，提交成功后弹窗询问是否推送到 GitHub；推送时若分支无上游，不自动设置，请手动执行 `git push -u origin <分支名>`。
 - 支持任意 OpenAI 兼容接口：换模型只需在 `.env` 里改 `BASE_URL` 与 `MODEL` 即可。
+- 若出现「生成完成但提交信息空白」：这是思考型模型把 `MAX_TOKENS` 全部用于思考所致，新版已拦截并给出提示。诊断信息写在 exe 同目录 `gui-debug.log`（含 `finish_reason`、token 用量、思考字符数），按 `THINKING=off` 或调大 `MAX_TOKENS` 即可解决。
